@@ -1,5 +1,7 @@
 # <img src='Sources/res/mipmap/icon.png' width='30'> imgui-android
 
+<img src='https://user-images.githubusercontent.com/38132413/150869964-faddb8d9-74e3-4856-ae92-37f8c405c879.jpg' width='600'>
+
 ## prerequisites
 
     sudo apt install -y openjdk-11-jdk-headless adb unzip zip
