@@ -1,4 +1,4 @@
-# imgui-android
+# <img src='Sources/res/mipmap/icon.png' width='30'> imgui-android
 
 ## prerequisites
 
