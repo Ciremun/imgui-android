@@ -9,11 +9,10 @@ SRC?=imgui*.cpp main.cpp
 
 # WARNING WARNING WARNING!  YOU ABSOLUTELY MUST OVERRIDE THE PROJECT NAME
 # you should also override these parameters, get your own signatre file and make your own manifest.
-APPNAME?=imgui-android
+APPNAME?=ImGuiAndroid
 LABEL?=$(APPNAME)
 APKFILE ?= $(APPNAME).apk
 PACKAGENAME?=org.ciremun.$(APPNAME)
-RAWDRAWANDROID?=.
 
 #We've tested it with android version 22, 24, 28, 29 and 30.
 #You can target something like Android 28, but if you set ANDROIDVERSION to say 22, then
@@ -21,7 +20,7 @@ RAWDRAWANDROID?=.
 ANDROIDVERSION?=29
 ANDROIDTARGET?=$(ANDROIDVERSION)
 #Default is to be strip down, but your app can override it.
-CFLAGS?=-I../../src/include -ffunction-sections -Os -fdata-sections -Wall -fvisibility=hidden
+CFLAGS?=-ffunction-sections -Os -fdata-sections -Wall -fvisibility=hidden
 LDFLAGS?=-Wl,--gc-sections -s
 ANDROID_FULLSCREEN?=y
 ADB?=adb
@@ -34,12 +33,10 @@ SDK_LOCATIONS += $(ANDROID_HOME) $(ANDROID_SDK_ROOT) ~/Android/Sdk $(HOME)/Libra
 ANDROIDSDK?=$(firstword $(foreach dir, $(SDK_LOCATIONS), $(basename $(dir) ) ) )
 NDK?=$(firstword $(ANDROID_NDK) $(ANDROID_NDK_HOME) $(wildcard $(ANDROIDSDK)/ndk/*) $(wildcard $(ANDROIDSDK)/ndk-bundle/*) )
 BUILD_TOOLS?=$(lastword $(wildcard $(ANDROIDSDK)/build-tools/*) )
-RAWDRAWANDROIDSRCS=$(NDK)/sources/android/native_app_glue/android_native_app_glue.c
-ANDROIDSRCS:= $(SRC) $(RAWDRAWANDROIDSRCS)
+ANDROIDSRCS:= $(SRC) $(NDK)/sources/android/native_app_glue/android_native_app_glue.c
 
 #if you have a custom Android Home location you can add it to this list.  
 #This makefile will select the first present folder.
-
 
 ifeq ($(UNAME), Linux)
 OS_NAME = linux-x86_64
@@ -50,7 +47,6 @@ endif
 ifeq ($(OS), Windows_NT)
 OS_NAME = windows-x86_64
 endif
-
 
 # fall back to default Android SDL installation location if valid NDK was not found
 ifeq ($(NDK),)
@@ -77,7 +73,7 @@ CFLAGS+=-Os -DANDROID -DAPPNAME=\"$(APPNAME)\"
 ifeq (ANDROID_FULLSCREEN,y)
 CFLAGS +=-DANDROID_FULLSCREEN
 endif
-CFLAGS+= -I$(RAWDRAWANDROID)/rawdraw -I$(NDK)/sysroot/usr/include -I$(NDK)/sysroot/usr/include/android -I$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/include/android -fPIC -I$(RAWDRAWANDROID) -DANDROIDVERSION=$(ANDROIDVERSION)
+CFLAGS+= -I$(NDK)/sysroot/usr/include -I$(NDK)/sysroot/usr/include/android -I$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/include/android -I$(NDK)/sources/android/native_app_glue -fPIC -DANDROIDVERSION=$(ANDROIDVERSION)
 LDFLAGS += -lm -lGLESv3 -lEGL -landroid -llog -lstdc++
 LDFLAGS += -shared -uANativeActivity_onCreate
 
@@ -89,7 +85,7 @@ AAPT:=$(BUILD_TOOLS)/aapt
 
 # Which binaries to build? Just comment/uncomment these lines:
 TARGETS += makecapk/lib/arm64-v8a/lib$(APPNAME).so
-# TARGETS += makecapk/lib/armeabi-v7a/lib$(APPNAME).so
+#TARGETS += makecapk/lib/armeabi-v7a/lib$(APPNAME).so
 #TARGETS += makecapk/lib/x86/lib$(APPNAME).so
 #TARGETS += makecapk/lib/x86_64/lib$(APPNAME).so
 
@@ -115,31 +111,22 @@ folders:
 
 makecapk/lib/arm64-v8a/lib$(APPNAME).so : $(ANDROIDSRCS)
 	mkdir -p makecapk/lib/arm64-v8a
+ifeq (,$(wildcard makecapk/lib/arm64-v8a/libc++_shared.so))
 	cp $(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so makecapk/lib/arm64-v8a/libc++_shared.so
+endif
 	$(CC_ARM64) $(CFLAGS) $(CFLAGS_ARM64) -o $@ $^ -L$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/aarch64-linux-android/$(ANDROIDVERSION) $(LDFLAGS)
 
-makecapk/lib/armeabi-v7a/lib$(APPNAME).so : $(ANDROIDSRCS)
-	mkdir -p makecapk/lib/armeabi-v7a
-	$(CC_ARM32) $(CFLAGS) $(CFLAGS_ARM32) -o $@ $^ -L$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/arm-linux-androideabi/$(ANDROIDVERSION) $(LDFLAGS)
+# makecapk/lib/armeabi-v7a/lib$(APPNAME).so : $(ANDROIDSRCS)
+# 	mkdir -p makecapk/lib/armeabi-v7a
+# 	$(CC_ARM32) $(CFLAGS) $(CFLAGS_ARM32) -o $@ $^ -L$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/arm-linux-androideabi/$(ANDROIDVERSION) $(LDFLAGS)
 
-makecapk/lib/x86/lib$(APPNAME).so : $(ANDROIDSRCS)
-	mkdir -p makecapk/lib/x86
-	$(CC_x86) $(CFLAGS) $(CFLAGS_x86) -o $@ $^ -L$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/i686-linux-android/$(ANDROIDVERSION) $(LDFLAGS)
+# makecapk/lib/x86/lib$(APPNAME).so : $(ANDROIDSRCS)
+# 	mkdir -p makecapk/lib/x86
+# 	$(CC_x86) $(CFLAGS) $(CFLAGS_x86) -o $@ $^ -L$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/i686-linux-android/$(ANDROIDVERSION) $(LDFLAGS)
 
-makecapk/lib/x86_64/lib$(APPNAME).so : $(ANDROIDSRCS)
-	mkdir -p makecapk/lib/x86_64
-	$(CC_x86) $(CFLAGS) $(CFLAGS_x86_64) -o $@ $^ -L$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/x86_64-linux-android/$(ANDROIDVERSION) $(LDFLAGS)
-
-#We're really cutting corners.  You should probably use resource files.. Replace android:label="@string/app_name" and add a resource file.
-#Then do this -S Sources/res on the aapt line.
-#For icon support, add -S makecapk/res to the aapt line.  also,  android:icon="@mipmap/icon" to your application line in the manifest.
-#If you want to strip out about 800 bytes of data you can remove the icon and strings.
-
-#Notes for the past:  These lines used to work, but don't seem to anymore.  Switched to newer jarsigner.
-#(zipalign -c -v 8 makecapk.apk)||true #This seems to not work well.
-#jarsigner -verify -verbose -certs makecapk.apk
-
-
+# makecapk/lib/x86_64/lib$(APPNAME).so : $(ANDROIDSRCS)
+# 	mkdir -p makecapk/lib/x86_64
+# 	$(CC_x86) $(CFLAGS) $(CFLAGS_x86_64) -o $@ $^ -L$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/lib/x86_64-linux-android/$(ANDROIDVERSION) $(LDFLAGS)
 
 makecapk.apk : $(TARGETS) $(EXTRA_ASSETS_TRIGGER) AndroidManifest.xml
 	mkdir -p makecapk/assets
@@ -169,7 +156,6 @@ AndroidManifest.xml :
 		LABEL=$(LABEL) envsubst '$$ANDROIDTARGET $$ANDROIDVERSION $$APPNAME $$PACKAGENAME $$LABEL' \
 		< AndroidManifest.xml.template > AndroidManifest.xml
 
-
 uninstall : 
 	($(ADB) uninstall $(PACKAGENAME))||true
 
@@ -183,4 +169,3 @@ run : push
 
 clean :
 	rm -rf temp.apk makecapk.apk makecapk $(APKFILE)
-

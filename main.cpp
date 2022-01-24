@@ -19,9 +19,9 @@ static bool                 g_Initialized = false;
 static char                 g_LogTag[] = "ImGuiExample";
 
 // Forward declarations of helper functions
-static int ShowSoftKeyboardInput();
-static int PollUnicodeChars();
 static int GetAssetData(const char* filename, void** out_data);
+static int AndroidGetUnicodeChar(int keyCode, int metaState);
+static void AndroidToggleKeyboard();
 
 void init(struct android_app* app)
 {
@@ -133,16 +133,10 @@ void tick()
     static bool show_another_window = false;
     static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-    // Poll Unicode characters via JNI
-    // FIXME: do not call this every frame because of JNI overhead
-    // rawdraw crash!
-    // PollUnicodeChars();
-
     // Open on-screen (soft) input if requested by Dear ImGui
     static bool WantTextInputLast = false;
-    // rawdraw crash!
-    // if (io.WantTextInput && !WantTextInputLast)
-    //     ShowSoftKeyboardInput();
+    if ((io.WantTextInput && !WantTextInputLast) || (!io.WantTextInput && WantTextInputLast))
+        AndroidToggleKeyboard();
     WantTextInputLast = io.WantTextInput;
 
     // Start the Dear ImGui frame
@@ -248,6 +242,13 @@ static void handleAppCmd(struct android_app* app, int32_t appCmd)
 
 static int32_t handleInputEvent(struct android_app* app, AInputEvent* inputEvent)
 {
+    if (AKeyEvent_getAction(inputEvent))
+    {
+        int code = AKeyEvent_getKeyCode(inputEvent);
+        int meta_state = AMotionEvent_getMetaState(inputEvent);
+        int unicode_key = AndroidGetUnicodeChar(code, meta_state);
+        ImGui::GetIO().AddInputCharacter(unicode_key);
+    }
     return ImGui_ImplAndroid_HandleInputEvent(inputEvent);
 }
 
@@ -285,75 +286,6 @@ void android_main(struct android_app* app)
     }
 }
 
-// Unfortunately, there is no way to show the on-screen input from native code.
-// Therefore, we call ShowSoftKeyboardInput() of the main activity implemented in MainActivity.kt via JNI.
-static int ShowSoftKeyboardInput()
-{
-    JavaVM* java_vm = g_App->activity->vm;
-    JNIEnv* java_env = NULL;
-
-    jint jni_return = java_vm->GetEnv((void**)&java_env, JNI_VERSION_1_6);
-    if (jni_return == JNI_ERR)
-        return -1;
-
-    jni_return = java_vm->AttachCurrentThread(&java_env, NULL);
-    if (jni_return != JNI_OK)
-        return -2;
-
-    jclass native_activity_clazz = java_env->GetObjectClass(g_App->activity->clazz);
-    if (native_activity_clazz == NULL)
-        return -3;
-
-    jmethodID method_id = java_env->GetMethodID(native_activity_clazz, "showSoftInput", "()V");
-    if (method_id == NULL)
-        return -4;
-
-    java_env->CallVoidMethod(g_App->activity->clazz, method_id);
-
-    jni_return = java_vm->DetachCurrentThread();
-    if (jni_return != JNI_OK)
-        return -5;
-
-    return 0;
-}
-
-// Unfortunately, the native KeyEvent implementation has no getUnicodeChar() function.
-// Therefore, we implement the processing of KeyEvents in MainActivity.kt and poll
-// the resulting Unicode characters here via JNI and send them to Dear ImGui.
-static int PollUnicodeChars()
-{
-    JavaVM* java_vm = g_App->activity->vm;
-    JNIEnv* java_env = NULL;
-
-    jint jni_return = java_vm->GetEnv((void**)&java_env, JNI_VERSION_1_6);
-    if (jni_return == JNI_ERR)
-        return -1;
-
-    jni_return = java_vm->AttachCurrentThread(&java_env, NULL);
-    if (jni_return != JNI_OK)
-        return -2;
-
-    jclass native_activity_clazz = java_env->GetObjectClass(g_App->activity->clazz);
-    if (native_activity_clazz == NULL)
-        return -3;
-
-    jmethodID method_id = java_env->GetMethodID(native_activity_clazz, "pollUnicodeChar", "()I");
-    if (method_id == NULL)
-        return -4;
-
-    // Send the actual characters to Dear ImGui
-    ImGuiIO& io = ImGui::GetIO();
-    jint unicode_character;
-    while ((unicode_character = java_env->CallIntMethod(g_App->activity->clazz, method_id)) != 0)
-        io.AddInputCharacter(unicode_character);
-
-    jni_return = java_vm->DetachCurrentThread();
-    if (jni_return != JNI_OK)
-        return -5;
-
-    return 0;
-}
-
 // Helper to retrieve data placed into the assets/ directory (android/app/src/main/assets)
 static int GetAssetData(const char* filename, void** outData)
 {
@@ -368,4 +300,44 @@ static int GetAssetData(const char* filename, void** outData)
         IM_ASSERT(num_bytes_read == num_bytes);
     }
     return num_bytes;
+}
+
+static void AndroidToggleKeyboard()
+{
+    JNIEnv *jni;
+    g_App->activity->vm->AttachCurrentThread(&jni, NULL);
+
+    jclass cls = jni->GetObjectClass(g_App->activity->clazz);
+    jmethodID methodID = jni->GetMethodID(cls, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;" );
+    jstring service_name = jni->NewStringUTF("input_method");
+    jobject input_service = jni->CallObjectMethod(g_App->activity->clazz, methodID, service_name);
+
+    jclass input_service_cls = jni->GetObjectClass(input_service);
+    methodID = jni->GetMethodID(input_service_cls, "toggleSoftInput", "(II)V");
+    jni->CallVoidMethod(input_service, methodID, 0, 0);
+
+    jni->DeleteLocalRef(service_name);
+
+    g_App->activity->vm->DetachCurrentThread();
+}
+
+static int AndroidGetUnicodeChar( int keyCode, int metaState )
+{
+    //https://stackoverflow.com/questions/21124051/receive-complete-android-unicode-input-in-c-c/43871301
+
+    int eventType = AKEY_EVENT_ACTION_DOWN;
+    JNIEnv *jni;
+    g_App->activity->vm->AttachCurrentThread(&jni, NULL);
+
+    jclass class_key_event = jni->FindClass("android/view/KeyEvent");
+
+    jmethodID method_get_unicode_char = jni->GetMethodID(class_key_event, "getUnicodeChar", "(I)I");
+    jmethodID eventConstructor = jni->GetMethodID(class_key_event, "<init>", "(II)V");
+    jobject eventObj = jni->NewObject(class_key_event, eventConstructor, eventType, keyCode);
+
+    int unicodeKey = jni->CallIntMethod(eventObj, method_get_unicode_char, metaState );
+
+    g_App->activity->vm->DetachCurrentThread();
+
+    return unicodeKey;
 }
