@@ -3,7 +3,7 @@
 
 all : makecapk.apk
 
-SRC?=imgui*.cpp main.cpp
+SRC?=imgui/*.cpp main.cpp
 
 .PHONY : push run
 
@@ -73,7 +73,7 @@ CFLAGS+=-Os -DANDROID -DAPPNAME=\"$(APPNAME)\"
 ifeq (ANDROID_FULLSCREEN,y)
 CFLAGS +=-DANDROID_FULLSCREEN
 endif
-CFLAGS+= -I$(NDK)/sysroot/usr/include -I$(NDK)/sysroot/usr/include/android -I$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/include/android -I$(NDK)/sources/android/native_app_glue -fPIC -DANDROIDVERSION=$(ANDROIDVERSION)
+CFLAGS+= -Iimgui -I$(NDK)/sysroot/usr/include -I$(NDK)/sysroot/usr/include/android -I$(NDK)/toolchains/llvm/prebuilt/$(OS_NAME)/sysroot/usr/include/android -I$(NDK)/sources/android/native_app_glue -fPIC -DANDROIDVERSION=$(ANDROIDVERSION)
 LDFLAGS += -lm -lGLESv3 -lEGL -landroid -llog -lstdc++
 LDFLAGS += -shared -uANativeActivity_onCreate
 
